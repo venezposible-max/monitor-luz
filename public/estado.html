@@ -290,9 +290,26 @@
         return urlParams.get(param);
     }
 
-    function init() {
+    async function init() {
         const idFromUrl = getQueryParam('id');
-        currentDeviceId = idFromUrl ? idFromUrl.trim().toUpperCase() : "ESP-DEMO12";
+
+        if (idFromUrl && idFromUrl.trim().toUpperCase() !== 'ESP-DEMO12') {
+            currentDeviceId = idFromUrl.trim().toUpperCase();
+        } else {
+            // Consultar a Railway cuál es el dispositivo activo registrado más reciente
+            try {
+                const res = await fetch('/api/devices');
+                const devicesList = await res.json();
+                if (devicesList && devicesList.length > 0) {
+                    currentDeviceId = devicesList[0].deviceId;
+                } else {
+                    currentDeviceId = "ESP-7A562F";
+                }
+            } catch (e) {
+                currentDeviceId = "ESP-7A562F";
+            }
+        }
+
         document.getElementById('devIdInput').value = currentDeviceId;
         document.getElementById('deviceIdText').textContent = currentDeviceId;
 

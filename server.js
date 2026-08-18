@@ -56,7 +56,15 @@ app.post('/api/ping', (req, res) => {
 });
 
 // =========================================================================
-// 2. ENDPOINT PARA CONSULTAR EL ESTADO (GET /api/status/:id)
+// 2. ENDPOINT PARA OBTENER TODOS LOS DISPOSITIVOS (GET /api/devices)
+// =========================================================================
+app.get('/api/devices', (req, res) => {
+    const list = Object.values(devices).sort((a, b) => b.lastSeen - a.lastSeen);
+    return res.json(list);
+});
+
+// =========================================================================
+// 3. ENDPOINT PARA CONSULTAR EL ESTADO (GET /api/status/:id)
 // =========================================================================
 app.get('/api/status/:id', (req, res) => {
     const deviceId = (req.params.id || '').toString().trim().toUpperCase();
