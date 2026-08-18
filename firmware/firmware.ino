@@ -1,7 +1,7 @@
 /*
   =============================================================================
   PROYECTO: Monitor de Luz e Internet (ESP8266 -> Servidor Railway)
-  VERSIÓN: Anti-Apagones (A prueba de cortes de luz y reinicios)
+  VERSIÓN: Portal Cautivo Instantáneo (Detección de EEPROM Limpia/Basura)
   =============================================================================
 */
 
@@ -30,18 +30,38 @@ const unsigned long PING_INTERVAL = 60000;
 bool configMode = false;
 bool lastConnectFailed = false;
 
+bool isValidSSID(String s) {
+  if (s.length() == 0 || s.length() > 32) return false;
+  for (unsigned int i = 0; i < s.length(); i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (c < 32 || c > 126) return false;
+  }
+  return true;
+}
+
 void loadCredentials() {
   EEPROM.begin(EEPROM_SIZE);
   char ssidBuf[33] = {0};
   char passBuf[65] = {0};
 
-  for (int i = 0; i < 32; ++i) ssidBuf[i] = char(EEPROM.read(i));
-  for (int i = 0; i < 64; ++i) passBuf[i] = char(EEPROM.read(32 + i));
+  for (int i = 0; i < 32; ++i) {
+    byte b = EEPROM.read(i);
+    ssidBuf[i] = (b >= 32 && b <= 126) ? char(b) : 0;
+  }
+  for (int i = 0; i < 64; ++i) {
+    byte b = EEPROM.read(32 + i);
+    passBuf[i] = (b >= 32 && b <= 126) ? char(b) : 0;
+  }
 
   ssid = String(ssidBuf);
   password = String(passBuf);
   ssid.trim();
   password.trim();
+
+  if (!isValidSSID(ssid)) {
+    ssid = "";
+    password = "";
+  }
 }
 
 void saveCredentials(String qssid, String qpass) {
@@ -75,8 +95,8 @@ void handleRoot() {
   html += "<p style='color:#8b949e;font-size:0.85rem;text-align:left;margin-bottom:6px'>Toca tu red WiFi para seleccionarla:</p>"
           "<div style='max-height:150px;overflow-y:auto;margin-bottom:12px;'>";
 
-  if (n == 0) {
-    html += "<p style='color:#8b949e'>No se encontraron redes cercanas...</p>";
+  if (n <= 0) {
+    html += "<p style='color:#8b949e'>Buscando redes cercanas...</p>";
   } else {
     for (int i = 0; i < n; ++i) {
       String netName = WiFi.SSID(i);
@@ -129,7 +149,9 @@ void handleSave() {
 
 void startConfigPortal() {
   configMode = true;
-  WiFi.mode(WIFI_AP);
+  WiFi.disconnect();
+  delay(100);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP("Configurar-Luz");
 
@@ -140,7 +162,7 @@ void startConfigPortal() {
   webServer.onNotFound(handleRoot);
   webServer.begin();
 
-  Serial.println("\n[Portal Cautivo] Red activa: 'Configurar-Luz'");
+  Serial.println("\n[Portal Cautivo] Red activa inmediatamente: 'Configurar-Luz'");
 }
 
 void sendPingToRailway() {
@@ -188,14 +210,14 @@ void setup() {
 
   loadCredentials();
 
-  if (ssid.length() == 0) {
+  if (ssid.length() == 0 || !isValidSSID(ssid)) {
     startConfigPortal();
   } else {
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), password.c_str());
 
     int tries = 0;
-    while (WiFi.status() != WL_CONNECTED && tries < 180) {
+    while (WiFi.status() != WL_CONNECTED && tries < 40) {
       delay(500);
       if (tries % 4 == 0) {
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
