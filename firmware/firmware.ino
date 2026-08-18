@@ -205,12 +205,19 @@ void setup() {
   snprintf(idBuffer, sizeof(idBuffer), "ESP-%06X", chipId);
   deviceId = String(idBuffer);
 
-  if (digitalRead(0) == LOW) {
+  EEPROM.begin(EEPROM_SIZE);
+  byte resetCounter = EEPROM.read(90);
+
+  if (digitalRead(0) == LOW || resetCounter >= 2) {
+    EEPROM.write(90, 0);
     saveCredentials("", "");
     delay(1000);
     startConfigPortal();
     return;
   }
+
+  EEPROM.write(90, resetCounter + 1);
+  EEPROM.commit();
 
   loadCredentials();
 
@@ -221,12 +228,14 @@ void setup() {
     WiFi.begin(ssid.c_str(), password.c_str());
 
     int tries = 0;
-    while (WiFi.status() != WL_CONNECTED && tries < 30) {
+    while (WiFi.status() != WL_CONNECTED && tries < 20) {
       delay(500);
       tries++;
     }
 
     if (WiFi.status() == WL_CONNECTED) {
+      EEPROM.write(90, 0);
+      EEPROM.commit();
       sendPingToRailway();
     } else {
       startConfigPortal();
