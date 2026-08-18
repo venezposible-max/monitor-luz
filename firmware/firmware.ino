@@ -1,77 +1,247 @@
 /*
   =============================================================================
-  PROYECTO: Monitor de Luz e Internet en Casa (ESP8266 -> Servidor Railway)
-  =============================================================================
-  1. Si no hay WiFi guardado, crea el punto de acceso "Configurar-Luz".
-  2. El usuario ingresa la red y clave de su casa en su celular.
-  3. La placa genera su ID Único (ej. ESP-A1B2C3).
-  4. Envía un latido HTTP POST a Railway cada 60 segundos.
+  PROYECTO: Monitor de Luz e Internet (ESP8266 -> Servidor Railway)
+  VERSIÓN: Escáner de Redes + Validaciones de Clave + Portal Cautivo Avanzado
   =============================================================================
 */
 
 #include <ESP8266WiFi.h>
-#include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include <WiFiManager.h>         // Librería: "WiFiManager" por tzapu
+#include <DNSServer.h>
+#include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-// =============================================================================
-// REEMPLAZA CON LA URL DE TU SERVIDOR EN RAILWAY
-// Ejemplo: "https://tu-monitor-luz.up.railway.app"
-// =============================================================================
 const char* RAILWAY_SERVER_URL = "https://monitor-luz-production.up.railway.app";
-// =============================================================================
 
+#define EEPROM_SIZE 96
+const byte DNS_PORT = 53;
+IPAddress apIP(192, 168, 4, 1);
+
+DNSServer dnsServer;
+ESP8266WebServer webServer(80);
+
+String ssid = "";
+String password = "";
 String deviceId = "";
+
 unsigned long lastPingTime = 0;
-const unsigned long PING_INTERVAL = 60000; // 60 segundos
+const unsigned long PING_INTERVAL = 60000;
+bool configMode = false;
+
+void loadCredentials() {
+  EEPROM.begin(EEPROM_SIZE);
+  char ssidBuf[33] = {0};
+  char passBuf[65] = {0};
+
+  for (int i = 0; i < 32; ++i) ssidBuf[i] = char(EEPROM.read(i));
+  for (int i = 0; i < 64; ++i) passBuf[i] = char(EEPROM.read(32 + i));
+
+  ssid = String(ssidBuf);
+  password = String(passBuf);
+  ssid.trim();
+  password.trim();
+}
+
+void saveCredentials(String qssid, String qpass) {
+  EEPROM.begin(EEPROM_SIZE);
+  for (int i = 0; i < EEPROM_SIZE; ++i) EEPROM.write(i, 0);
+
+  for (int i = 0; i < qssid.length(); ++i) EEPROM.write(i, qssid[i]);
+  for (int i = 0; i < qpass.length(); ++i) EEPROM.write(32 + i, qpass[i]);
+  
+  EEPROM.commit();
+}
+
+void handleRoot() {
+  int n = WiFi.scanNetworks();
+  
+  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:16px;text-align:center}"
+                ".card{background:#161b22;padding:20px;border-radius:16px;max-width:360px;margin:auto;border:1px solid #30363d}"
+                ".net-item{background:#0d1117;border:1px solid #30363d;padding:10px 14px;border-radius:8px;margin:6px 0;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:0.9rem}"
+                ".net-item:hover{border-color:#58a6ff;background:#1f242c}"
+                "input{width:100%;padding:12px;margin:10px 0;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#fff;box-sizing:border-box;font-size:0.95rem}"
+                "button{width:100%;padding:14px;background:#238636;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:1rem;margin-top:8px}</style>"
+                "<script>function sel(s){document.getElementById('s').value=s;document.getElementById('p').focus();}</script>"
+                "</head><body><div class='card'><h2>⚡ Configurar Luz</h2>"
+                "<p style='color:#10b981;font-weight:bold;font-size:0.9rem;margin-bottom:12px'>ID Dispositivo: " + deviceId + "</p>"
+                "<p style='color:#8b949e;font-size:0.85rem;text-align:left;margin-bottom:6px'>Toca tu red WiFi para seleccionarla:</p>"
+                "<div style='max-height:160px;overflow-y:auto;margin-bottom:12px;'>";
+
+  if (n == 0) {
+    html += "<p style='color:#8b949e'>No se encontraron redes cercanas...</p>";
+  } else {
+    for (int i = 0; i < n; ++i) {
+      String netName = WiFi.SSID(i);
+      int rssi = WiFi.RSSI(i);
+      String signalStr = rssi > -65 ? "📶 Muy Fuerte" : (rssi > -80 ? "📶 Buena" : "📶 Débil");
+      html += "<div class='net-item' onclick=\"sel('" + netName + "')\"><span>" + netName + "</span><small style='color:#8b949e'>" + signalStr + "</small></div>";
+    }
+  }
+
+  html += "</div>"
+          "<form action='/save' method='POST'>"
+          "<input type='text' id='s' name='s' placeholder='Nombre del WiFi (SSID)' required><br>"
+          "<input type='password' id='p' name='p' placeholder='Contraseña de tu WiFi' required><br>"
+          "<button type='submit'>CONECTAR Y VALIDAR 🚀</button>"
+          "</form></div></body></html>";
+
+  webServer.send(200, "text/html", html);
+}
+
+void handleSave() {
+  if (webServer.hasArg("s") && webServer.hasArg("p")) {
+    String testSsid = webServer.arg("s");
+    String testPass = webServer.arg("p");
+    testSsid.trim();
+    testPass.trim();
+
+    String testingHtml = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                         "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:30px;text-align:center}"
+                         ".card{background:#161b22;padding:24px;border-radius:16px;max-width:340px;margin:auto;border:1px solid #30363d}</style></head><body>"
+                         "<div class='card'><h2>⏳ Validando Clave...</h2>"
+                         "<p style='color:#8b949e'>Conectando a '<b>" + testSsid + "</b>'. Por favor espera unos segundos...</p></div></body></html>";
+    webServer.send(200, "text/html", testingHtml);
+
+    WiFi.disconnect();
+    delay(200);
+    WiFi.begin(testSsid.c_str(), testPass.c_str());
+
+    int tries = 0;
+    while (WiFi.status() != WL_CONNECTED && tries < 24) {
+      delay(500);
+      tries++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      saveCredentials(testSsid, testPass);
+      String myUrl = String(RAILWAY_SERVER_URL) + "/?id=" + deviceId;
+
+      String successHtml = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                           "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;text-align:center}"
+                           ".card{background:#161b22;padding:24px;border-radius:16px;max-width:340px;margin:auto;border:1px solid #30363d}"
+                           "input{width:100%;padding:12px;margin:12px 0;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#60a5fa;box-sizing:border-box;font-family:monospace;font-size:0.85rem;text-align:center}"
+                           "button{width:100%;padding:14px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem}</style>"
+                           "<script>function copyUrl(){var copyText=document.getElementById('u');copyText.select();copyText.setSelectionRange(0,99999);navigator.clipboard.writeText(copyText.value);document.getElementById('b').textContent='¡COPIADO! ✅';}</script>"
+                           "</head><body><div class='card'>"
+                           "<h2>¡Conexión Exitosa! 🎉</h2>"
+                           "<p style='color:#10b981;font-weight:bold;'>Dispositivo: " + deviceId + "</p>"
+                           "<p style='color:#8b949e;font-size:0.85rem'>Clave verificada. Este es tu enlace único de monitoreo:</p>"
+                           "<input type='text' id='u' value='" + myUrl + "' readonly>"
+                           "<button id='b' onclick='copyUrl()'>📋 COPIAR ENLACE</button>"
+                           "<p style='color:#e5c07b;font-size:0.8rem;margin-top:16px'>La placa se reiniciará para iniciar el monitoreo...</p>"
+                           "</div></body></html>";
+
+      webServer.send(200, "text/html", successHtml);
+      delay(4000);
+      ESP.restart();
+    } else {
+      WiFi.disconnect();
+      WiFi.mode(WIFI_AP);
+      WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+      WiFi.softAP("Configurar-Luz");
+
+      String errorHtml = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                         "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;text-align:center}"
+                         ".card{background:#161b22;padding:24px;border-radius:16px;max-width:340px;margin:auto;border:1px solid #ef4444}"
+                         "a{display:block;width:100%;padding:14px;background:#ef4444;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;margin-top:16px;box-sizing:border-box}</style></head><body>"
+                         "<div class='card'>"
+                         "<h2 style='color:#ef4444'>⚠️ Clave Incorrecta</h2>"
+                         "<p style='color:#8b949e'>No se pudo conectar a la red '<b>" + testSsid + "</b>'. Verifica la contraseña e inténtalo de nuevo.</p>"
+                         "<a href='/'>VOLVER A INTENTAR 🔄</a>"
+                         "</div></body></html>";
+
+      webServer.send(200, "text/html", errorHtml);
+    }
+  }
+}
+
+void startConfigPortal() {
+  configMode = true;
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+  WiFi.softAP("Configurar-Luz");
+
+  dnsServer.start(DNS_PORT, "*", apIP);
+
+  webServer.on("/", handleRoot);
+  webServer.on("/save", handleSave);
+  webServer.onNotFound(handleRoot);
+  webServer.begin();
+}
+
+void sendPingToRailway() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(250);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(250);
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient http;
+  String endpoint = String(RAILWAY_SERVER_URL) + "/api/ping";
+
+  if (http.begin(client, endpoint)) {
+    http.addHeader("Content-Type", "application/json");
+    String jsonPayload = "{\"deviceId\":\"" + deviceId + "\",\"uptimeMs\":" + String(millis()) + "}";
+    int httpCode = http.POST(jsonPayload);
+    http.end();
+  }
+}
 
 void setup() {
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("\n\n============================================");
-  Serial.println(" INICIANDO MONITOR DE LUZ (RAILWAY VERSION)");
-  Serial.println("============================================");
+  pinMode(0, INPUT_PULLUP);
 
-  // 1. Obtener ID Único del ESP8266
   uint32_t chipId = ESP.getChipId();
   char idBuffer[16];
   snprintf(idBuffer, sizeof(idBuffer), "ESP-%06X", chipId);
   deviceId = String(idBuffer);
 
-  Serial.println("[ID Único Dispositivo]: " + deviceId);
-
-  // 2. Configurar Portal Cautivo ("Configurar-Luz")
-  WiFiManager wifiManager;
-  wifiManager.setAPStaticIPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
-
-  Serial.println("[WiFi] Si no se conecta automáticamente, conéctate al WiFi: 'Configurar-Luz'");
-
-  if (!wifiManager.autoConnect("Configurar-Luz")) {
-    Serial.println("[WiFi] Error de conexión. Reiniciando...");
-    delay(3000);
-    ESP.restart();
+  if (digitalRead(0) == LOW) {
+    saveCredentials("", "");
+    delay(1000);
+    startConfigPortal();
+    return;
   }
 
-  Serial.println("\n[WiFi] ¡CONECTADO CON ÉXITO!");
-  Serial.print("[WiFi] IP asignada: ");
-  Serial.println(WiFi.localIP());
+  loadCredentials();
 
-  // 3. Imprimir enlace directo
-  String estadoUrl = String(RAILWAY_SERVER_URL) + "/estado.html?id=" + deviceId;
-  Serial.println("\n============================================");
-  Serial.println(" ¡LISTO! Guarda este enlace en tu teléfono:");
-  Serial.println(" 👉 " + estadoUrl);
-  Serial.println("============================================\n");
+  if (ssid.length() == 0) {
+    startConfigPortal();
+  } else {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(), password.c_str());
 
-  sendPingToRailway();
+    int tries = 0;
+    while (WiFi.status() != WL_CONNECTED && tries < 30) {
+      delay(500);
+      tries++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      sendPingToRailway();
+    } else {
+      startConfigPortal();
+    }
+  }
 }
 
 void loop() {
+  if (configMode) {
+    dnsServer.processNextRequest();
+    webServer.handleClient();
+    return;
+  }
+
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WiFi] Conexión perdida. Reconectando...");
     WiFi.reconnect();
     delay(5000);
     return;
@@ -80,92 +250,5 @@ void loop() {
   if (millis() - lastPingTime >= PING_INTERVAL || lastPingTime == 0) {
     sendPingToRailway();
     lastPingTime = millis();
-  }
-}
-
-// -----------------------------------------------------------------------------
-// PORTAL CAUTIVO HTML (AP CONFIGURAR-LUZ)
-// -----------------------------------------------------------------------------
-void handleRoot() {
-  String myUrl = String(RAILWAY_SERVER_URL) + "/?id=" + deviceId;
-
-  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
-                "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;text-align:center}"
-                ".card{background:#161b22;padding:20px;border-radius:14px;max-width:340px;margin:auto;border:1px solid #30363d}"
-                "input{width:100%;padding:10px;margin:8px 0;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#fff;box-sizing:border-box}"
-                "button{width:100%;padding:12px;background:#238636;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer}</style></head><body>"
-                "<div class='card'><h2>⚡ Configurar Luz</h2>"
-                "<p style='color:#10b981;font-weight:bold;font-size:0.9rem;margin-bottom:4px'>ID: " + deviceId + "</p>"
-                "<p style='color:#8b949e;font-size:0.85rem'>Ingresa el WiFi de tu casa:</p>"
-                "<form action='/save' method='POST'>"
-                "<input type='text' name='s' placeholder='Nombre del WiFi (SSID)' required><br>"
-                "<input type='password' name='p' placeholder='Contraseña' required><br>"
-                "<button type='submit'>GUARDAR Y CONECTAR</button>"
-                "</form></div></body></html>";
-  webServer.send(200, "text/html", html);
-}
-
-void handleSave() {
-  if (webServer.hasArg("s") && webServer.hasArg("p")) {
-    String newSsid = webServer.arg("s");
-    String newPass = webServer.arg("p");
-    saveCredentials(newSsid, newPass);
-
-    String myUrl = String(RAILWAY_SERVER_URL) + "/?id=" + deviceId;
-
-    String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
-                  "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;text-align:center}"
-                  ".card{background:#161b22;padding:24px;border-radius:16px;max-width:340px;margin:auto;border:1px solid #30363d}"
-                  "input{width:100%;padding:10px;margin:10px 0;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#60a5fa;box-sizing:border-box;font-family:monospace;font-size:0.85rem;text-align:center}"
-                  "button{width:100%;padding:12px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem}</style>"
-                  "<script>function copyUrl(){var copyText=document.getElementById('u');copyText.select();copyText.setSelectionRange(0,99999);navigator.clipboard.writeText(copyText.value);document.getElementById('b').textContent='¡COPIADO! ✅';}</script>"
-                  "</head><body><div class='card'>"
-                  "<h2>¡WiFi Guardado! 🎉</h2>"
-                  "<p style='color:#10b981;font-weight:bold;'>Dispositivo: " + deviceId + "</p>"
-                  "<p style='color:#8b949e;font-size:0.85rem'>Este es tu enlace único de monitoreo. Cópialo o guárdalo ahora:</p>"
-                  "<input type='text' id='u' value='" + myUrl + "' readonly>"
-                  "<button id='b' onclick='copyUrl()'>📋 COPIAR ENLACE</button>"
-                  "<p style='color:#e5c07b;font-size:0.8rem;margin-top:16px'>La placa se reiniciará en unos segundos...</p>"
-                  "</div></body></html>";
-
-    webServer.send(200, "text/html", html);
-    delay(4000);
-    ESP.restart();
-  }
-}
-
-void sendPingToRailway() {
-  // Parpadear el LED azul integrado durante 5 segundos (10 ciclos de 250ms encendido / 250ms apagado)
-  pinMode(LED_BUILTIN, OUTPUT);
-  for (int i = 0; i < 10; i++) {
-    digitalWrite(LED_BUILTIN, LOW);  // Encender LED azul (Active LOW)
-    delay(250);
-    digitalWrite(LED_BUILTIN, HIGH); // Apagar LED azul
-    delay(250);
-  }
-
-  WiFiClientSecure client;
-  client.setInsecure(); // Omitir verificación SSL estricta en ESP8266
-
-  HTTPClient http;
-  String endpoint = String(RAILWAY_SERVER_URL) + "/api/ping";
-
-  Serial.print("[HTTP] Enviando latido a Railway... ");
-
-  if (http.begin(client, endpoint)) {
-    http.addHeader("Content-Type", "application/json");
-
-    String jsonPayload = "{\"deviceId\":\"" + deviceId + "\",\"uptimeMs\":" + String(millis()) + "}";
-    int httpCode = http.POST(jsonPayload);
-
-    if (httpCode > 0) {
-      Serial.printf("Respuesta Railway: %d OK\n", httpCode);
-    } else {
-      Serial.printf("Error HTTP: %s\n", http.errorToString(httpCode).c_str());
-    }
-
-    http.end();
-  } else {
-    Serial.println("No se pudo iniciar la conexión HTTPS.");
   }
 }
