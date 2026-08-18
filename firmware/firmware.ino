@@ -104,7 +104,7 @@ void sendPingToRailway() {
   if (http.begin(client, endpoint)) {
     http.addHeader("Content-Type", "application/json");
 
-    String jsonPayload = "{\"deviceId\":\"" + deviceId + "\"}";
+    String jsonPayload = "{\"deviceId\":\"" + deviceId + "\",\"uptimeMs\":" + String(millis()) + "}";
     int httpCode = http.POST(jsonPayload);
 
     if (httpCode > 0) {

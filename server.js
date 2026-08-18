@@ -36,20 +36,18 @@ function saveDB() {
 // =========================================================================
 app.post('/api/ping', (req, res) => {
     const deviceId = (req.body.deviceId || req.body.id || '').toString().trim().toUpperCase();
+    const boardUptimeMs = parseInt(req.body.uptimeMs || 0, 10);
 
     if (!deviceId) {
         return res.status(400).json({ error: 'Falta el parámetro deviceId' });
     }
 
     const now = Date.now();
-    const existing = devices[deviceId];
-    
-    // Si es la primera vez o si estuvo offline (más de 80 segundos sin ping), reiniciar el contador de "Tiempo con Luz"
-    const wasOffline = !existing || (now - existing.lastSeen >= 80000);
-    let onlineSince = existing ? (existing.onlineSince || now) : now;
-    if (wasOffline) {
-        onlineSince = now; // La energía eléctrica acaba de regresar
-    }
+
+    // CALCULO EXACTO DE REGRESO DE LUZ:
+    // La placa sabe exactamente cuántos milisegundos lleva encendida desde que volvió la electricidad (millis()).
+    // onlineSince = Hora Actual del Servidor - Milisegundos encendida la placa.
+    const onlineSince = boardUptimeMs > 0 ? (now - boardUptimeMs) : now;
 
     devices[deviceId] = {
         deviceId: deviceId,
@@ -61,7 +59,7 @@ app.post('/api/ping', (req, res) => {
 
     saveDB();
 
-    console.log(`[PING] Dispositivo ${deviceId} activo a las ${new Date(now).toLocaleTimeString()}`);
+    console.log(`[PING] Dispositivo ${deviceId} activo. Tiempo con luz: ${Math.floor(boardUptimeMs / 60000)} min`);
     return res.json({ success: true, message: 'Ping recibido correctamente', deviceId, lastSeen: now, onlineSince });
 });
 
