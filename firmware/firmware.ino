@@ -84,6 +84,15 @@ void loop() {
 }
 
 void sendPingToRailway() {
+  // Parpadear el LED azul integrado durante 5 segundos (10 ciclos de 250ms encendido / 250ms apagado)
+  pinMode(LED_BUILTIN, OUTPUT);
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(LED_BUILTIN, LOW);  // Encender LED azul (Active LOW)
+    delay(250);
+    digitalWrite(LED_BUILTIN, HIGH); // Apagar LED azul
+    delay(250);
+  }
+
   WiFiClientSecure client;
   client.setInsecure(); // Omitir verificación SSL estricta en ESP8266
 

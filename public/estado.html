@@ -269,6 +269,10 @@
                 <span class="info-label">Último Reporte</span>
                 <span class="info-value" id="lastReportText">--:--:--</span>
             </div>
+            <div class="info-item" style="grid-column: span 2; background: rgba(16, 185, 129, 0.08); padding: 10px; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2); margin-top: 4px;">
+                <span class="info-label" style="color: #10b981; font-weight: 700;">⏱️ Tiempo Continuo con Luz</span>
+                <span class="info-value" id="uptimeText" style="font-size: 1.1rem; color: #ffffff;">--</span>
+            </div>
         </div>
     </div>
 
@@ -351,10 +355,33 @@
 
             if (data.status === 'online') {
                 renderState('online', 'HAY LUZ ⚡', 'Tu casa tiene energía eléctrica e internet funcionando perfectamente.');
+
+                // Formatear Tiempo Continuo con Luz
+                const uptimeMs = data.uptimeMs || 0;
+                const totalMins = Math.floor(uptimeMs / 60000);
+                
+                let uptimeFormatted = "";
+                if (totalMins < 1) {
+                    uptimeFormatted = "Menos de 1 minuto";
+                } else if (totalMins < 60) {
+                    uptimeFormatted = `${totalMins} minuto${totalMins === 1 ? '' : 's'}`;
+                } else {
+                    const hours = Math.floor(totalMins / 60);
+                    const mins = totalMins % 60;
+                    if (hours < 24) {
+                        uptimeFormatted = `${hours} hora${hours === 1 ? '' : 's'} y ${mins} min`;
+                    } else {
+                        const days = Math.floor(hours / 24);
+                        const remHours = hours % 24;
+                        uptimeFormatted = `${days} día${days === 1 ? '' : 's'}, ${remHours}h y ${mins}m`;
+                    }
+                }
+                document.getElementById('uptimeText').textContent = uptimeFormatted;
             } else {
                 const diffMins = Math.floor(data.elapsedMs / 60000);
                 let elapsedStr = diffMins < 60 ? `Hace ${diffMins} min` : `Hace ${Math.floor(diffMins / 60)}h y ${diffMins % 60}m`;
                 renderState('offline', 'SE FUE LA LUZ 🔴', `${elapsedStr} que la casa se quedó sin energía.`);
+                document.getElementById('uptimeText').textContent = "Sin servicio de luz";
             }
         } catch (e) {
             console.error(e);

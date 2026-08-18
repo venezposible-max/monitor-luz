@@ -42,9 +42,19 @@ app.post('/api/ping', (req, res) => {
     }
 
     const now = Date.now();
+    const existing = devices[deviceId];
+    
+    // Si es la primera vez o si estuvo offline (más de 3 min sin ping), reiniciar el contador de "Tiempo con Luz"
+    const wasOffline = !existing || (now - existing.lastSeen >= 180000);
+    let onlineSince = existing ? (existing.onlineSince || now) : now;
+    if (wasOffline) {
+        onlineSince = now; // La energía eléctrica acaba de regresar
+    }
+
     devices[deviceId] = {
         deviceId: deviceId,
         lastSeen: now,
+        onlineSince: onlineSince,
         ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
         updatedAt: new Date(now).toISOString()
     };
@@ -52,7 +62,7 @@ app.post('/api/ping', (req, res) => {
     saveDB();
 
     console.log(`[PING] Dispositivo ${deviceId} activo a las ${new Date(now).toLocaleTimeString()}`);
-    return res.json({ success: true, message: 'Ping recibido correctamente', deviceId, lastSeen: now });
+    return res.json({ success: true, message: 'Ping recibido correctamente', deviceId, lastSeen: now, onlineSince });
 });
 
 // =========================================================================
@@ -81,13 +91,16 @@ app.get('/api/status/:id', (req, res) => {
 
     const now = Date.now();
     const elapsedMs = now - device.lastSeen;
-    const isOnline = elapsedMs < 180000; // Menos de 3 minutos (180,000 ms)
+    const isOnline = elapsedMs < 180000; // Menos de 3 minutos
+    const uptimeMs = isOnline ? (now - (device.onlineSince || device.lastSeen)) : 0;
 
     return res.json({
         found: true,
         deviceId: deviceId,
         lastSeen: device.lastSeen,
+        onlineSince: device.onlineSince || device.lastSeen,
         elapsedMs: elapsedMs,
+        uptimeMs: uptimeMs,
         status: isOnline ? 'online' : 'offline',
         message: isOnline ? 'HAY LUZ' : 'SE FUE LA LUZ'
     });
