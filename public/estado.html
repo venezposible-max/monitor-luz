@@ -284,10 +284,20 @@
     </div>
 
     <div class="qr-section">
-        <h3 style="font-size: 0.95rem; margin-bottom: 8px;">📱 Guardar Enlace en Teléfono</h3>
-        <p style="font-size: 0.8rem; color: var(--text-sub);">Escanea este QR desde tu teléfono para abrir tu monitor directamente.</p>
+        <h3 style="font-size: 0.95rem; margin-bottom: 8px;">📱 Guardar o Compartir Enlace</h3>
+        <p style="font-size: 0.8rem; color: var(--text-sub);">Escanea este QR o copia el enlace directo a tu monitor:</p>
+        
         <div id="qrcode"></div>
-        <div class="input-group">
+
+        <!-- Enlace completo con botón de copiar -->
+        <div style="margin: 14px 0 10px; display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="fullShareUrlInput" readonly style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #60a5fa; font-size: 0.82rem; font-family: monospace;" />
+            <button id="copyBtn" onclick="copyShareLink()" style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #60a5fa; border-radius: 10px; padding: 10px 14px; font-weight: 600; cursor: pointer; white-space: nowrap; font-size: 0.82rem; display: flex; align-items: center; gap: 4px;">
+                <span>📋</span> <span id="copyBtnText">Copiar Enlace</span>
+            </button>
+        </div>
+
+        <div class="input-group" style="margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 14px;">
             <input type="text" id="devIdInput" placeholder="Ejemplo: ESP-A1B2C3" />
             <button onclick="changeDeviceId()">Ver Estado</button>
         </div>
@@ -415,6 +425,10 @@
         qrContainer.innerHTML = "";
         const currentUrl = window.location.origin + window.location.pathname + "?id=" + currentDeviceId;
 
+        // Actualizar el campo de texto con el enlace completo
+        const urlInput = document.getElementById('fullShareUrlInput');
+        if (urlInput) urlInput.value = currentUrl;
+
         new QRCode(qrContainer, {
             text: currentUrl,
             width: 140,
@@ -422,6 +436,25 @@
             colorDark : "#090d16",
             colorLight : "#ffffff",
             correctLevel : QRCode.CorrectLevel.H
+        });
+    }
+
+    function copyShareLink() {
+        const urlInput = document.getElementById('fullShareUrlInput');
+        if (!urlInput || !urlInput.value) return;
+
+        urlInput.select();
+        urlInput.setSelectionRange(0, 99999); // Para móviles
+
+        navigator.clipboard.writeText(urlInput.value).then(() => {
+            const btnText = document.getElementById('copyBtnText');
+            const originalText = btnText.textContent;
+            btnText.textContent = "¡Copiado! ✅";
+            setTimeout(() => {
+                btnText.textContent = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Error al copiar:', err);
         });
     }
 
