@@ -20,7 +20,7 @@
 // REEMPLAZA CON LA URL DE TU SERVIDOR EN RAILWAY
 // Ejemplo: "https://tu-monitor-luz.up.railway.app"
 // =============================================================================
-const char* RAILWAY_SERVER_URL = "https://tu-app-railway.up.railway.app";
+const char* RAILWAY_SERVER_URL = "https://monitor-luz-production.up.railway.app";
 // =============================================================================
 
 String deviceId = "";
