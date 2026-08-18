@@ -1,7 +1,7 @@
 /*
   =============================================================================
   PROYECTO: Monitor de Luz e Internet (ESP8266 -> Servidor Railway)
-  VERSIÓN: Captive Portal Ultra-Compatible iPhone/Android (Garantizado)
+  VERSIÓN: Anti-Apagones (A prueba de cortes de luz y reinicios)
   =============================================================================
 */
 
@@ -171,25 +171,20 @@ void setup() {
   delay(500);
 
   pinMode(0, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 
   uint32_t chipId = ESP.getChipId();
   char idBuffer[16];
   snprintf(idBuffer, sizeof(idBuffer), "ESP-%06X", chipId);
   deviceId = String(idBuffer);
 
-  EEPROM.begin(EEPROM_SIZE);
-  byte resetCounter = EEPROM.read(90);
-
-  if (digitalRead(0) == LOW || resetCounter >= 2) {
-    EEPROM.write(90, 0);
+  if (digitalRead(0) == LOW) {
     saveCredentials("", "");
     delay(1000);
     startConfigPortal();
     return;
   }
-
-  EEPROM.write(90, resetCounter + 1);
-  EEPROM.commit();
 
   loadCredentials();
 
@@ -200,14 +195,17 @@ void setup() {
     WiFi.begin(ssid.c_str(), password.c_str());
 
     int tries = 0;
-    while (WiFi.status() != WL_CONNECTED && tries < 20) {
+    while (WiFi.status() != WL_CONNECTED && tries < 180) {
       delay(500);
+      if (tries % 4 == 0) {
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+      }
       tries++;
     }
 
+    digitalWrite(LED_BUILTIN, HIGH);
+
     if (WiFi.status() == WL_CONNECTED) {
-      EEPROM.write(90, 0);
-      EEPROM.commit();
       sendPingToRailway();
     } else {
       lastConnectFailed = true;
