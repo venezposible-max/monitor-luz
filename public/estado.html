@@ -353,7 +353,7 @@
             const lastDate = new Date(data.lastSeen);
             document.getElementById('lastReportText').textContent = lastDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-            if (data.status === 'online') {
+            if (data.elapsedMs < 80000) {
                 renderState('online', 'HAY LUZ ⚡', 'Tu casa tiene energía eléctrica e internet funcionando perfectamente.');
 
                 // Formatear Tiempo Continuo con Luz

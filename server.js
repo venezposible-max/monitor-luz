@@ -44,8 +44,8 @@ app.post('/api/ping', (req, res) => {
     const now = Date.now();
     const existing = devices[deviceId];
     
-    // Si es la primera vez o si estuvo offline (más de 3 min sin ping), reiniciar el contador de "Tiempo con Luz"
-    const wasOffline = !existing || (now - existing.lastSeen >= 180000);
+    // Si es la primera vez o si estuvo offline (más de 80 segundos sin ping), reiniciar el contador de "Tiempo con Luz"
+    const wasOffline = !existing || (now - existing.lastSeen >= 80000);
     let onlineSince = existing ? (existing.onlineSince || now) : now;
     if (wasOffline) {
         onlineSince = now; // La energía eléctrica acaba de regresar
@@ -91,7 +91,7 @@ app.get('/api/status/:id', (req, res) => {
 
     const now = Date.now();
     const elapsedMs = now - device.lastSeen;
-    const isOnline = elapsedMs < 180000; // Menos de 3 minutos
+    const isOnline = elapsedMs < 80000; // Menos de 80 segundos (1m 20s)
     const uptimeMs = isOnline ? (now - (device.onlineSince || device.lastSeen)) : 0;
 
     return res.json({
