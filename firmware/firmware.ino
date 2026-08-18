@@ -83,6 +83,57 @@ void loop() {
   }
 }
 
+// -----------------------------------------------------------------------------
+// PORTAL CAUTIVO HTML (AP CONFIGURAR-LUZ)
+// -----------------------------------------------------------------------------
+void handleRoot() {
+  String myUrl = String(RAILWAY_SERVER_URL) + "/?id=" + deviceId;
+
+  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;text-align:center}"
+                ".card{background:#161b22;padding:20px;border-radius:14px;max-width:340px;margin:auto;border:1px solid #30363d}"
+                "input{width:100%;padding:10px;margin:8px 0;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#fff;box-sizing:border-box}"
+                "button{width:100%;padding:12px;background:#238636;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer}</style></head><body>"
+                "<div class='card'><h2>⚡ Configurar Luz</h2>"
+                "<p style='color:#10b981;font-weight:bold;font-size:0.9rem;margin-bottom:4px'>ID: " + deviceId + "</p>"
+                "<p style='color:#8b949e;font-size:0.85rem'>Ingresa el WiFi de tu casa:</p>"
+                "<form action='/save' method='POST'>"
+                "<input type='text' name='s' placeholder='Nombre del WiFi (SSID)' required><br>"
+                "<input type='password' name='p' placeholder='Contraseña' required><br>"
+                "<button type='submit'>GUARDAR Y CONECTAR</button>"
+                "</form></div></body></html>";
+  webServer.send(200, "text/html", html);
+}
+
+void handleSave() {
+  if (webServer.hasArg("s") && webServer.hasArg("p")) {
+    String newSsid = webServer.arg("s");
+    String newPass = webServer.arg("p");
+    saveCredentials(newSsid, newPass);
+
+    String myUrl = String(RAILWAY_SERVER_URL) + "/?id=" + deviceId;
+
+    String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                  "<style>body{font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;text-align:center}"
+                  ".card{background:#161b22;padding:24px;border-radius:16px;max-width:340px;margin:auto;border:1px solid #30363d}"
+                  "input{width:100%;padding:10px;margin:10px 0;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#60a5fa;box-sizing:border-box;font-family:monospace;font-size:0.85rem;text-align:center}"
+                  "button{width:100%;padding:12px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:0.95rem}</style>"
+                  "<script>function copyUrl(){var copyText=document.getElementById('u');copyText.select();copyText.setSelectionRange(0,99999);navigator.clipboard.writeText(copyText.value);document.getElementById('b').textContent='¡COPIADO! ✅';}</script>"
+                  "</head><body><div class='card'>"
+                  "<h2>¡WiFi Guardado! 🎉</h2>"
+                  "<p style='color:#10b981;font-weight:bold;'>Dispositivo: " + deviceId + "</p>"
+                  "<p style='color:#8b949e;font-size:0.85rem'>Este es tu enlace único de monitoreo. Cópialo o guárdalo ahora:</p>"
+                  "<input type='text' id='u' value='" + myUrl + "' readonly>"
+                  "<button id='b' onclick='copyUrl()'>📋 COPIAR ENLACE</button>"
+                  "<p style='color:#e5c07b;font-size:0.8rem;margin-top:16px'>La placa se reiniciará en unos segundos...</p>"
+                  "</div></body></html>";
+
+    webServer.send(200, "text/html", html);
+    delay(4000);
+    ESP.restart();
+  }
+}
+
 void sendPingToRailway() {
   // Parpadear el LED azul integrado durante 5 segundos (10 ciclos de 250ms encendido / 250ms apagado)
   pinMode(LED_BUILTIN, OUTPUT);
