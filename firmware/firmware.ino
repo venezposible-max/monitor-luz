@@ -1,12 +1,13 @@
 /*
   =============================================================================
   PROYECTO: Monitor de Luz e Internet (ESP8266 -> Servidor Railway)
-  VERSIÓN: WiFiManager Ultra-Estable + Compatibilidad Garantizada
+  VERSIÓN: Doble Enchufado Rápido (Double-Tap Reset) + Paciencia Anti-Apagón
   =============================================================================
 */
 
 #include <ESP8266WiFi.h>
 #include <WiFiManager.h>         // Librería WiFiManager por tablatronix
+#include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
@@ -53,9 +54,16 @@ void setup() {
 
   WiFiManager wifiManager;
 
-  pinMode(0, INPUT_PULLUP);
-  if (digitalRead(0) == LOW) {
+  EEPROM.begin(512);
+  byte resetCounter = EEPROM.read(90);
+
+  if (resetCounter >= 2) {
+    EEPROM.write(90, 0);
+    EEPROM.commit();
     wifiManager.resetSettings();
+  } else {
+    EEPROM.write(90, resetCounter + 1);
+    EEPROM.commit();
   }
 
   if (!wifiManager.autoConnect("Configurar-Luz")) {
@@ -63,10 +71,21 @@ void setup() {
     ESP.restart();
   }
 
+  EEPROM.write(90, 0);
+  EEPROM.commit();
+
   sendPingToRailway();
 }
 
 void loop() {
+  static bool counterReset = false;
+  if (!counterReset && millis() > 10000) {
+    EEPROM.begin(512);
+    EEPROM.write(90, 0);
+    EEPROM.commit();
+    counterReset = true;
+  }
+
   if (WiFi.status() != WL_CONNECTED) {
     WiFi.reconnect();
     delay(5000);
