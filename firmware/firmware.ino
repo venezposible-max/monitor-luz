@@ -199,6 +199,21 @@ void sendPingToRailway() {
     http.addHeader("Content-Type", "application/json");
     String jsonPayload = "{\"deviceId\":\"" + deviceId + "\",\"uptimeMs\":" + String(millis()) + "}";
     int httpCode = http.POST(jsonPayload);
+
+    if (httpCode > 0) {
+      String response = http.getString();
+      if (response.indexOf("RESET_WIFI") != -1) {
+        saveCredentials("", "");
+        for (int i = 0; i < 10; i++) {
+          digitalWrite(LED_BUILTIN, LOW);
+          delay(100);
+          digitalWrite(LED_BUILTIN, HIGH);
+          delay(100);
+        }
+        delay(1000);
+        ESP.restart();
+      }
+    }
     http.end();
   }
 }

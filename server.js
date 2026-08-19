@@ -43,24 +43,48 @@ app.post('/api/ping', (req, res) => {
     }
 
     const now = Date.now();
-
-    // CALCULO EXACTO DE REGRESO DE LUZ:
-    // La placa sabe exactamente cuántos milisegundos lleva encendida desde que volvió la electricidad (millis()).
-    // onlineSince = Hora Actual del Servidor - Milisegundos encendida la placa.
     const onlineSince = boardUptimeMs > 0 ? (now - boardUptimeMs) : now;
+
+    const existing = devices[deviceId] || {};
+    const shouldReset = existing.resetRequested || false;
 
     devices[deviceId] = {
         deviceId: deviceId,
         lastSeen: now,
         onlineSince: onlineSince,
+        resetRequested: false, // Resetear la orden una vez enviada
         ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
         updatedAt: new Date(now).toISOString()
     };
 
     saveDB();
 
-    console.log(`[PING] Dispositivo ${deviceId} activo. Tiempo con luz: ${Math.floor(boardUptimeMs / 60000)} min`);
-    return res.json({ success: true, message: 'Ping recibido correctamente', deviceId, lastSeen: now, onlineSince });
+    console.log(`[PING] Dispositivo ${deviceId} activo. ${shouldReset ? '-> ENVIANDO ORDEN DE REINICIO' : ''}`);
+    return res.json({ 
+        success: true, 
+        message: 'Ping recibido correctamente', 
+        deviceId, 
+        lastSeen: now, 
+        onlineSince,
+        action: shouldReset ? 'RESET_WIFI' : 'NONE'
+    });
+});
+
+// =========================================================================
+// 2. ENDPOINT PARA REGISTRAR ORDEN DE REINICIO REMOTO (POST /api/reset-wifi)
+// =========================================================================
+app.post('/api/reset-wifi', (req, res) => {
+    const deviceId = (req.body.deviceId || req.body.id || '').toString().trim().toUpperCase();
+
+    if (!deviceId || !devices[deviceId]) {
+        return res.status(404).json({ error: 'Dispositivo no encontrado' });
+    }
+
+    devices[deviceId].resetRequested = true;
+    saveDB();
+
+    console.log(`[ORDEN] Solicitud de reinicio de WiFi registrada para ${deviceId}`);
+    return res.json({ success: true, message: 'Orden de reinicio registrada. La placa borrará su WiFi en su próximo reporte.' });
 });
 
 // =========================================================================
